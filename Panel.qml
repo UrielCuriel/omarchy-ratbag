@@ -121,6 +121,7 @@ Panel {
             Text {
               width: parent.width
               text: hostWidget ? hostWidget.deviceName : "Mouse"
+              textFormat: Text.PlainText
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.subtitle
@@ -131,6 +132,7 @@ Panel {
             Text {
               width: parent.width
               text: hostWidget ? hostWidget.statusLabel : "Disconnected"
+              textFormat: Text.PlainText
               color: Qt.darker(root.contentForeground, 1.45)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.bodySmall
@@ -176,6 +178,7 @@ Panel {
             Text {
               id: batteryLabel
               text: hostWidget ? hostWidget.battery + "%" : ""
+              textFormat: Text.PlainText
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.bodySmall
@@ -268,6 +271,7 @@ Panel {
                 text: (dpiSlider.dragging
                   ? root.nearestDpi(dpiSlider.liveValue)
                   : (hostWidget ? hostWidget.dpi : 0)) + " DPI"
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.caption
@@ -328,6 +332,7 @@ Panel {
                 text: (pollingSlider.dragging
                   ? root.pollingRateAt(pollingSlider.liveValue)
                   : (hostWidget ? hostWidget.reportRate : 0)) + " Hz"
+                textFormat: Text.PlainText
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.caption
@@ -368,6 +373,7 @@ Panel {
           visible: hostWidget && !hostWidget.connected && !hostWidget.loading
           width: parent.width
           text: "Connect a libratbag-compatible mouse to manage its onboard profiles."
+          textFormat: Text.PlainText
           color: Qt.darker(root.contentForeground, 1.35)
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.body
@@ -378,6 +384,7 @@ Panel {
           visible: hostWidget && hostWidget.error !== ""
           width: parent.width
           text: hostWidget ? hostWidget.error : ""
+          textFormat: Text.PlainText
           color: Color.urgent
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.bodySmall

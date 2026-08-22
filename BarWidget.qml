@@ -24,6 +24,11 @@ BarWidget {
   property bool batteryOnline: false
   property bool piperAvailable: false
   property string error: ""
+  property string statusError: ""
+  property string applyError: ""
+
+  readonly property int maxInputLineLength: 8192
+  readonly property int maxErrorLength: 2048
 
   readonly property bool charging: batteryStatus.toLowerCase() === "charging"
   readonly property bool charged: batteryStatus.toLowerCase() === "full"
@@ -40,28 +45,47 @@ BarWidget {
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
-  function parseList(value) {
+  function parseList(value, limit) {
     if (!value) return []
-    return String(value).split(",").filter(function(entry) { return entry !== "" })
+    return String(value).split(",").filter(function(entry) {
+      return /^\d+$/.test(entry)
+    }).slice(0, limit)
+  }
+
+  function boundedNumber(value, minimum, maximum, fallback) {
+    var parsed = Number(value)
+    if (!isFinite(parsed)) return fallback
+    return Math.max(minimum, Math.min(maximum, parsed))
+  }
+
+  function appendError(current, line) {
+    var chunk = String(line || "").substring(0, 512)
+    if (chunk === "") return current
+    return (current + (current === "" ? "" : "\n") + chunk).substring(0, maxErrorLength)
+  }
+
+  function escapeMarkup(value) {
+    return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   }
 
   function parseStatusLine(line) {
-    var separator = line.indexOf("\t")
+    var boundedLine = String(line || "").substring(0, maxInputLineLength)
+    var separator = boundedLine.indexOf("\t")
     if (separator < 0) return
-    var key = line.substring(0, separator)
-    var value = line.substring(separator + 1).trim()
+    var key = boundedLine.substring(0, Math.min(separator, 64))
+    var value = boundedLine.substring(separator + 1).trim()
 
     if (key === "connected") connected = value === "1"
-    else if (key === "device_id") deviceId = value
-    else if (key === "device_name") deviceName = value
-    else if (key === "profile") activeProfile = Number(value)
-    else if (key === "profile_count") profileCount = Number(value)
-    else if (key === "dpi") dpi = Number(value)
-    else if (key === "dpis") dpiOptions = parseList(value)
-    else if (key === "rate") reportRate = Number(value)
-    else if (key === "rates") reportRateOptions = parseList(value)
-    else if (key === "battery") battery = Number(value)
-    else if (key === "battery_status") batteryStatus = value
+    else if (key === "device_id") deviceId = value.substring(0, 128)
+    else if (key === "device_name") deviceName = value.substring(0, 256)
+    else if (key === "profile") activeProfile = boundedNumber(value, -1, 15, -1)
+    else if (key === "profile_count") profileCount = boundedNumber(value, 0, 16, 0)
+    else if (key === "dpi") dpi = boundedNumber(value, 0, 100000, 0)
+    else if (key === "dpis") dpiOptions = parseList(value, 256)
+    else if (key === "rate") reportRate = boundedNumber(value, 0, 100000, 0)
+    else if (key === "rates") reportRateOptions = parseList(value, 32)
+    else if (key === "battery") battery = boundedNumber(value, -1, 100, -1)
+    else if (key === "battery_status") batteryStatus = value.substring(0, 32)
     else if (key === "battery_online") batteryOnline = value === "1"
     else if (key === "piper_available") piperAvailable = value === "1"
   }
@@ -69,6 +93,7 @@ BarWidget {
   function refresh(quiet) {
     if (statusProcess.running) return
     error = ""
+    statusError = ""
     if (!quiet) loading = true
     statusProcess.running = true
   }
@@ -76,6 +101,7 @@ BarWidget {
   function applySetting(kind, value) {
     if (!connected || applyProcess.running) return
     error = ""
+    applyError = ""
     applying = true
     applyProcess.command = [Qt.resolvedUrl("ratbag-status").toString().replace("file://", ""), kind, String(value)]
     applyProcess.running = true
@@ -126,24 +152,20 @@ BarWidget {
     id: statusProcess
     command: [Qt.resolvedUrl("ratbag-status").toString().replace("file://", ""), "status"]
     stdout: SplitParser { onRead: function(line) { root.parseStatusLine(line) } }
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: if (String(text || "").trim() !== "") root.error = String(text).trim()
-    }
+    stderr: SplitParser { onRead: function(line) { root.statusError = root.appendError(root.statusError, line) } }
     onExited: function(exitCode) {
       root.loading = false
+      if (root.statusError !== "") root.error = root.statusError
       if (exitCode !== 0 && root.connected) root.error = root.error || "Unable to read mouse settings"
     }
   }
 
   Process {
     id: applyProcess
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: if (String(text || "").trim() !== "") root.error = String(text).trim()
-    }
+    stderr: SplitParser { onRead: function(line) { root.applyError = root.appendError(root.applyError, line) } }
     onExited: function(exitCode) {
       root.applying = false
+      if (root.applyError !== "") root.error = root.applyError
       if (exitCode !== 0) root.error = root.error || "Unable to apply setting"
       refreshTimer.restart()
     }
@@ -205,7 +227,7 @@ BarWidget {
     text: root.statusIcon
     dimmed: !root.connected
     tooltipText: root.connected
-      ? root.deviceName + " | " + root.statusLabel + (root.battery >= 0 ? " | " + root.battery + "%" : "")
+      ? root.escapeMarkup(root.deviceName) + " | " + root.statusLabel + (root.battery >= 0 ? " | " + root.battery + "%" : "")
       : "No supported mouse detected"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()

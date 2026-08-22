@@ -4,11 +4,24 @@ set -u
 
 export PATH=/usr/bin:/usr/local/bin
 
+readonly COMMAND_TIMEOUT_SECONDS=5
+readonly MAX_STDOUT_BYTES=32768
+readonly MAX_STDOUT_LINES=128
+readonly MAX_STDERR_BYTES=4096
+readonly MAX_STDERR_LINES=32
+
 ratbagctl_bin="$(command -v ratbagctl 2>/dev/null || true)"
 piper_bin="$(command -v piper 2>/dev/null || true)"
 
 emit() {
   printf '%s\t%s\n' "$1" "$2"
+}
+
+run_ratbagctl() {
+  timeout "$COMMAND_TIMEOUT_SECONDS" "$ratbagctl_bin" "$@" \
+    2> >(head -c "$MAX_STDERR_BYTES" | head -n "$MAX_STDERR_LINES" >&2) \
+    | head -c "$MAX_STDOUT_BYTES" \
+    | head -n "$MAX_STDOUT_LINES"
 }
 
 find_device() {
@@ -22,25 +35,23 @@ find_device() {
     device_name="${device_name#"${device_name%%[![:space:]]*}"}"
     device_name="${device_name%"${device_name##*[![:space:]]}"}"
     return 0
-  done < <("$ratbagctl_bin" list 2>/dev/null)
+  done < <(run_ratbagctl list 2>/dev/null)
 
   return 1
 }
 
 read_value() {
-  "$ratbagctl_bin" "$device_id" "$@" 2>/dev/null
+  run_ratbagctl "$device_id" "$@" 2>/dev/null
 }
 
 battery_status() {
-  local battery model capacity status online
+  local battery capacity status online
 
   for battery in /sys/class/power_supply/hidpp_battery_*; do
     [[ -d "$battery" ]] || continue
-    model="$(<"$battery/model_name")"
     capacity="$(<"$battery/capacity")"
     status="$(<"$battery/status")"
     online="$(<"$battery/online")"
-    emit battery_model "$model"
     emit battery "$capacity"
     emit battery_status "$status"
     emit battery_online "$online"
@@ -74,7 +85,7 @@ show_status() {
   dpis="$(read_value dpi get-all || true)"
   dpi="${dpi%dpi}"
 
-  info="$("$ratbagctl_bin" "$device_id" info 2>/dev/null || true)"
+  info="$(run_ratbagctl "$device_id" info 2>/dev/null || true)"
   while IFS= read -r line; do
     case "$line" in
       "Number of Profiles:"*)
@@ -111,13 +122,13 @@ apply_setting() {
 
   case "$operation" in
     profile)
-      "$ratbagctl_bin" "$device_id" profile active set "$value"
+      run_ratbagctl "$device_id" profile active set "$value"
       ;;
     dpi)
-      "$ratbagctl_bin" "$device_id" dpi set "$value"
+      run_ratbagctl "$device_id" dpi set "$value"
       ;;
     rate)
-      "$ratbagctl_bin" "$device_id" rate set "$value"
+      run_ratbagctl "$device_id" rate set "$value"
       ;;
     *)
       return 2
