@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "urielcuriel.ratbag",
+  "name": "Ratbag Mouse",
+  "version": "0.1.0",
+  "author": "Uriel Curiel",
+  "license": "MIT",
+  "description": "Gaming mouse profiles, DPI, polling rate, and battery status from the Omarchy bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Ratbag Mouse",
+    "description": "Control a libratbag-compatible mouse and monitor its battery.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

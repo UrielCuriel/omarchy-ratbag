@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+
+set -u
+
+export PATH=/usr/bin:/usr/local/bin
+
+ratbagctl_bin="$(command -v ratbagctl 2>/dev/null || true)"
+piper_bin="$(command -v piper 2>/dev/null || true)"
+
+emit() {
+  printf '%s\t%s\n' "$1" "$2"
+}
+
+find_device() {
+  local line
+
+  [[ -n "$ratbagctl_bin" ]] || return 1
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    device_id="${line%%:*}"
+    device_name="${line#*:}"
+    device_name="${device_name#"${device_name%%[![:space:]]*}"}"
+    device_name="${device_name%"${device_name##*[![:space:]]}"}"
+    return 0
+  done < <("$ratbagctl_bin" list 2>/dev/null)
+
+  return 1
+}
+
+read_value() {
+  "$ratbagctl_bin" "$device_id" "$@" 2>/dev/null
+}
+
+battery_status() {
+  local battery model capacity status online
+
+  for battery in /sys/class/power_supply/hidpp_battery_*; do
+    [[ -d "$battery" ]] || continue
+    model="$(<"$battery/model_name")"
+    capacity="$(<"$battery/capacity")"
+    status="$(<"$battery/status")"
+    online="$(<"$battery/online")"
+    emit battery_model "$model"
+    emit battery "$capacity"
+    emit battery_status "$status"
+    emit battery_online "$online"
+    return
+  done
+
+  emit battery "-1"
+  emit battery_status "Unknown"
+  emit battery_online "0"
+}
+
+show_status() {
+  local profile dpi rate rates dpis info line profile_count=0
+
+  emit piper_available "$([[ -n "$piper_bin" ]] && printf 1 || printf 0)"
+
+  if ! find_device; then
+    emit connected "0"
+    battery_status
+    return 1
+  fi
+
+  emit connected "1"
+  emit device_id "$device_id"
+  emit device_name "$device_name"
+
+  profile="$(read_value profile active get || true)"
+  dpi="$(read_value dpi get || true)"
+  rate="$(read_value rate get || true)"
+  rates="$(read_value rate get-all || true)"
+  dpis="$(read_value dpi get-all || true)"
+  dpi="${dpi%dpi}"
+
+  info="$("$ratbagctl_bin" "$device_id" info 2>/dev/null || true)"
+  while IFS= read -r line; do
+    case "$line" in
+      "Number of Profiles:"*)
+        profile_count="${line##*: }"
+        break
+        ;;
+    esac
+  done <<< "$info"
+
+  emit profile "$profile"
+  emit profile_count "$profile_count"
+  emit dpi "$dpi"
+  emit dpis "${dpis// /,}"
+  emit rate "$rate"
+  emit rates "${rates// /,}"
+  battery_status
+}
+
+launch_piper() {
+  [[ -n "$piper_bin" ]] || return 127
+
+  if [[ -x /usr/bin/python3 ]]; then
+    exec /usr/bin/python3 "$piper_bin"
+  fi
+
+  exec "$piper_bin"
+}
+
+apply_setting() {
+  local operation="${1:-}" value="${2:-}"
+
+  find_device || return 1
+  [[ "$value" =~ ^[0-9]+$ ]] || return 2
+
+  case "$operation" in
+    profile)
+      "$ratbagctl_bin" "$device_id" profile active set "$value"
+      ;;
+    dpi)
+      "$ratbagctl_bin" "$device_id" dpi set "$value"
+      ;;
+    rate)
+      "$ratbagctl_bin" "$device_id" rate set "$value"
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+}
+
+case "${1:-status}" in
+  status)
+    show_status
+    ;;
+  profile|dpi|rate)
+    apply_setting "$@"
+    ;;
+  piper)
+    launch_piper
+    ;;
+  *)
+    exit 2
+    ;;
+esac
